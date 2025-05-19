@@ -39,7 +39,7 @@ if (!HEFENG_API_KEY) {
 if (!HEFENG_WEATHER_API_URL) { // 如果天气API URL为空
     console.warn("警告: 未提供 HEFENG_WEATHER_API_URL (天气API基础URL)。天气 API 调用可能会失败。请使用 --apiUrl=<API基础URL> 参数提供。");
 }
-if (!HEFENG_GEO_API_URL) { // 如果地理位置API URL为空 (理论上它会和天气API URL一致或都为空)
+if (!HEFENG_GEO_API_URL) { // 如果地理位置API URL为空
     console.warn("警告: 未配置 HEFENG_GEO_API_URL (地理位置API基础URL)。城市ID查询功能可能受影响。请使用 --apiUrl=<API基础URL> 参数提供。");
 }
 
@@ -58,8 +58,8 @@ const WeatherArgumentsSchema = z.object({
 // 创建服务器实例
 const server = new Server(
     {
-        name: "hefeng-weather-server",
-        version: "1.2.5", // 版本更新
+        name: "hefeng-weather-server", // 更新服务器名称
+        version: "1.2.6", // 更新服务器版本号
     },
     {
         capabilities: {
@@ -80,7 +80,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     properties: {
                         location: {
                             type: "string",
-                            description: "城市名称（例如：北京 , beijing）、逗号分隔的经纬度信息 (例如：116.40,39.90) 或 和风天气的 Location ID。天气API支持直接使用城市名进行模糊搜索。",
+                            description: "城市名称（例如：北京）、逗号分隔的经纬度信息 (例如：116.40,39.90) 或 和风天气的 Location ID。天气API支持直接使用城市名进行模糊搜索。",
                         },
                         days: {
                             type: "string",
@@ -136,22 +136,60 @@ interface HeFengCityLookupResponse {
     };
 }
 
+// 定义实时天气 'now' 对象的具体结构
+interface HeFengNowObject {
+    obsTime: string;
+    temp: string;
+    feelsLike: string;
+    text: string;
+    windDir: string;
+    windScale: string;
+    humidity: string;
+    precip: string;
+    pressure: string;
+    vis: string;
+    cloud?: string;
+    dew?: string;
+}
+
+// 定义逐小时天气 'hourly' 对象的具体结构
+interface HeFengHourlyObject {
+    fxTime: string;
+    temp: string;
+    text: string;
+    windDir: string;
+    windScale: string;
+    humidity: string;
+    pop?: string; 
+    precip?: string;
+    pressure?: string;
+    cloud?: string;
+    dew?: string;
+}
+
+// 定义逐日天气 'daily' 对象的具体结构
+interface HeFengDailyObject {
+    fxDate: string;
+    tempMax: string;
+    tempMin: string;
+    textDay: string;
+    textNight: string;
+    windDirDay: string;
+    windScaleDay: string;
+    windDirNight: string;
+    windScaleNight: string;
+    humidity: string;
+    precip: string;
+    pressure: string;
+    vis: string;
+    uvIndex: string;
+    sunrise?: string;
+    sunset?: string;
+}
+
 interface HeFengWeatherNowResponse {
     code: string;
-    now?: {
-        obsTime: string;
-        temp: string;
-        feelsLike: string;
-        text: string;
-        windDir: string;
-        windScale: string;
-        humidity: string;
-        precip: string;
-        pressure: string;
-        vis: string;
-        cloud?: string;
-        dew?: string;
-    };
+    now?: HeFengNowObject; // 使用具体类型
     refer?: { 
         sources: string[];
         license: string[];
@@ -160,24 +198,7 @@ interface HeFengWeatherNowResponse {
 
 interface HeFengWeatherDailyResponse {
     code: string;
-    daily?: Array<{
-        fxDate: string;
-        tempMax: string;
-        tempMin: string;
-        textDay: string;
-        textNight: string;
-        windDirDay: string;
-        windScaleDay: string;
-        windDirNight: string;
-        windScaleNight: string;
-        humidity: string;
-        precip: string;
-        pressure: string;
-        vis: string;
-        uvIndex: string;
-        sunrise?: string;
-        sunset?: string;
-    }>;
+    daily?: HeFengDailyObject[]; // 使用具体类型数组
     refer?: { 
         sources: string[];
         license: string[];
@@ -186,19 +207,7 @@ interface HeFengWeatherDailyResponse {
 
 interface HeFengWeatherHourlyResponse {
     code: string;
-    hourly?: Array<{
-        fxTime: string;
-        temp: string;
-        text: string;
-        windDir: string;
-        windScale: string;
-        humidity: string;
-        pop?: string; 
-        precip?: string;
-        pressure?: string;
-        cloud?: string;
-        dew?: string;
-    }>;
+    hourly?: HeFengHourlyObject[]; // 使用具体类型数组
     refer?: { 
         sources: string[];
         license: string[];
@@ -211,18 +220,17 @@ async function makeHeFengRequest<T>(baseUrl: string, path: string, params: Recor
         console.error("错误: HEFENG_API_KEY 未设置。");
         return { code: "500", error: "API Key not configured" } as any; 
     }
-    if (!baseUrl) { // 检查 baseUrl 是否为空
-        console.error(`错误: API 基础 URL (${baseUrl === HEFENG_WEATHER_API_URL ? '天气API' : '地理位置API'}) 未设置。`);
+    if (!baseUrl) { 
+        console.error(`错误: API 基础 URL 未设置。`);
         return { code: "500", error: "API Base URL not configured" } as any;
     }
     
     const queryParams = new URLSearchParams({
         ...params,
-        key: HEFENG_API_KEY, // API Key 作为查询参数
+        key: HEFENG_API_KEY, 
     });
     
     const fullUrl = `${baseUrl}${path}?${queryParams.toString()}`;
-    // 在日志中隐藏API Key的值
     const paramsForLog = { ...params };
     const queryParamsForLog = new URLSearchParams(paramsForLog);
     console.log(`发起请求: ${baseUrl}${path}?${queryParamsForLog.toString()}&key=YOUR_API_KEY`);
@@ -240,7 +248,7 @@ async function makeHeFengRequest<T>(baseUrl: string, path: string, params: Recor
                      return { code: hefengError.code, error: `HeFeng API Error: ${hefengError.message || errorBody}` } as any;
                 }
             } catch (e) {
-                // 不是JSON错误，继续抛出通用HTTP错误
+                // Not a JSON error
             }
             throw new Error(`HTTP error! status: ${response.status}, body: ${errorBody}`);
         }
@@ -260,12 +268,12 @@ async function makeHeFengRequest<T>(baseUrl: string, path: string, params: Recor
 
 // 辅助函数：根据城市名称获取位置信息 (Location ID, 经纬度)
 async function fetchLocationDetailsByName(cityName: string): Promise<HeFengLocation | null> {
-    if (!HEFENG_GEO_API_URL) { // 在调用前检查 GEO API URL 是否已设置
+    if (!HEFENG_GEO_API_URL) { 
         console.error("错误：地理位置API基础URL (HEFENG_GEO_API_URL) 未配置。");
         return null;
     }
     const response = await makeHeFengRequest<HeFengCityLookupResponse>(
-        HEFENG_GEO_API_URL, // 使用 HEFENG_GEO_API_URL
+        HEFENG_GEO_API_URL, 
         "/v2/city/lookup",
         { location: cityName }
     );
@@ -327,7 +335,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
             
             const weatherData = await makeHeFengRequest<HeFengWeatherNowResponse | HeFengWeatherHourlyResponse | HeFengWeatherDailyResponse>(
-                HEFENG_WEATHER_API_URL, // 使用 HEFENG_WEATHER_API_URL
+                HEFENG_WEATHER_API_URL, 
                 weatherPath,
                 { location: effectiveLocation }
             );
@@ -340,63 +348,69 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 };
             }
 
-            if (days === 'now' && 'now' in weatherData && weatherData.now) {
-                const { now } = weatherData as HeFengWeatherNowResponse;
-                const weatherText = `地点: ${displayLocation}\n` +
-                    `观测时间: ${now.obsTime}\n` +
-                    `天气: ${now.text}\n` +
-                    `温度: ${now.temp}°C\n` +
-                    `体感温度: ${now.feelsLike}°C\n` +
-                    `风向: ${now.windDir}\n` +
-                    `风力: ${now.windScale}级\n` +
-                    `相对湿度: ${now.humidity}%\n` +
-                    `当前小时累计降水量: ${now.precip}mm\n` +
-                    `大气压强: ${now.pressure}hPa\n` +
-                    `能见度: ${now.vis}公里`;
-                return { content: [{ type: "text", text: weatherText }] };
-            } else if (['24h', '72h', '168h'].includes(days) && 'hourly' in weatherData && weatherData.hourly) {
-                const { hourly } = weatherData as HeFengWeatherHourlyResponse;
-                 if (!hourly || hourly.length === 0) {
-                    return { content: [{ type: "text", text: `无法获取 ${displayLocation} 的逐小时预报，或该地区无此项数据。` }] };
+            if (days === 'now') {
+                // Type guard for 'now' data
+                if ('now' in weatherData && weatherData.now) {
+                    const nowDetails: HeFengNowObject = weatherData.now; // nowDetails is now guaranteed to be defined and correctly typed
+                    const weatherText = `地点: ${displayLocation}\n` +
+                        `观测时间: ${nowDetails.obsTime}\n` +
+                        `天气: ${nowDetails.text}\n` +
+                        `温度: ${nowDetails.temp}°C\n` +
+                        `体感温度: ${nowDetails.feelsLike}°C\n` +
+                        `风向: ${nowDetails.windDir}\n` +
+                        `风力: ${nowDetails.windScale}级\n` +
+                        `相对湿度: ${nowDetails.humidity}%\n` +
+                        `当前小时累计降水量: ${nowDetails.precip}mm\n` +
+                        `大气压强: ${nowDetails.pressure}hPa\n` +
+                        `能见度: ${nowDetails.vis}公里`;
+                    return { content: [{ type: "text", text: weatherText }] };
+                } else {
+                    return { content: [{ type: "text", text: `获取 ${displayLocation} 的实时天气数据时，数据结构不完整或无效。 (Code: ${weatherData.code})` }] };
                 }
-                const hoursText = hourly.map(hour => {
-                    return `时间: ${hour.fxTime}\n` +
-                        `  天气: ${hour.text}, 温度: ${hour.temp}°C\n` +
-                        `  湿度: ${hour.humidity}%, 降水概率: ${hour.pop || 'N/A'}%\n` +
-                        `  风向: ${hour.windDir} ${hour.windScale}级\n` +
-                        `------------------------`;
-                }).join('\n');
-                return {
-                    content: [{
-                        type: "text",
-                        text: `地点: ${displayLocation}\n${days}小时预报:\n${hoursText}`
-                    }],
-                };
-            } else if ('daily' in weatherData && weatherData.daily) { 
-                const { daily } = weatherData as HeFengWeatherDailyResponse;
-                 if (!daily || daily.length === 0) {
-                    return { content: [{ type: "text", text: `无法获取 ${displayLocation} 的 ${days} 天气预报，或该地区无此项数据。` }] };
+            } else if (['24h', '72h', '168h'].includes(days)) {
+                // Type guard for 'hourly' data
+                if ('hourly' in weatherData && weatherData.hourly && weatherData.hourly.length > 0) {
+                    const hourlyDetails: HeFengHourlyObject[] = weatherData.hourly;
+                    const hoursText = hourlyDetails.map(hour => {
+                        return `时间: ${hour.fxTime}\n` +
+                            `  天气: ${hour.text}, 温度: ${hour.temp}°C\n` +
+                            `  湿度: ${hour.humidity}%, 降水概率: ${hour.pop || 'N/A'}%\n` +
+                            `  风向: ${hour.windDir} ${hour.windScale}级\n` +
+                            `------------------------`;
+                    }).join('\n');
+                    return {
+                        content: [{
+                            type: "text",
+                            text: `地点: ${displayLocation}\n${days}小时预报:\n${hoursText}`
+                        }],
+                    };
+                } else {
+                     return { content: [{ type: "text", text: `无法获取 ${displayLocation} 的逐小时预报，数据不完整或该地区无此项数据。 (Code: ${weatherData.code})` }] };
                 }
-                const forecastText = daily.map(day => {
-                    return `日期: ${day.fxDate} (日出: ${day.sunrise || 'N/A'}, 日落: ${day.sunset || 'N/A'})\n` +
-                        `  白天天气: ${day.textDay}, 夜间天气: ${day.textNight}\n` +
-                        `  最高温度: ${day.tempMax}°C, 最低温度: ${day.tempMin}°C\n` +
-                        `  相对湿度: ${day.humidity}%, 降水量: ${day.precip}mm\n` +
-                        `  白天风向: ${day.windDirDay} ${day.windScaleDay}级\n` +
-                        `  夜间风向: ${day.windDirNight} ${day.windScaleNight}级\n` +
-                        `  紫外线指数: ${day.uvIndex}\n` +
-                        `------------------------`;
-                }).join('\n');
-                return {
-                    content: [{
-                        type: "text",
-                        text: `地点: ${displayLocation}\n${days}预报:\n${forecastText}`
-                    }],
-                };
-            } else {
-                 return { content: [{ type: "text", text: `获取 ${displayLocation} 的天气数据格式不正确或不完整。 (Code: ${weatherData.code})` }] };
+            } else { // Daily forecast: 3d, 7d, etc.
+                // Type guard for 'daily' data
+                if ('daily' in weatherData && weatherData.daily && weatherData.daily.length > 0) {
+                    const dailyDetails: HeFengDailyObject[] = weatherData.daily;
+                    const forecastText = dailyDetails.map(day => {
+                        return `日期: ${day.fxDate} (日出: ${day.sunrise || 'N/A'}, 日落: ${day.sunset || 'N/A'})\n` +
+                            `  白天天气: ${day.textDay}, 夜间天气: ${day.textNight}\n` +
+                            `  最高温度: ${day.tempMax}°C, 最低温度: ${day.tempMin}°C\n` +
+                            `  相对湿度: ${day.humidity}%, 降水量: ${day.precip}mm\n` +
+                            `  白天风向: ${day.windDirDay} ${day.windScaleDay}级\n` +
+                            `  夜间风向: ${day.windDirNight} ${day.windScaleNight}级\n` +
+                            `  紫外线指数: ${day.uvIndex}\n` +
+                            `------------------------`;
+                    }).join('\n');
+                    return {
+                        content: [{
+                            type: "text",
+                            text: `地点: ${displayLocation}\n${days}预报:\n${forecastText}`
+                        }],
+                    };
+                } else {
+                    return { content: [{ type: "text", text: `无法获取 ${displayLocation} 的 ${days} 天气预报，数据不完整或该地区无此项数据。 (Code: ${weatherData.code})` }] };
+                }
             }
-
         } else {
             throw new Error(`Unknown tool: ${name}`);
         }
@@ -420,7 +434,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error("Weather-zhcn-plus MCP Server running on stdio. Waiting for requests...");
+    console.error("hefeng-weather-server MCP Server running on stdio. Waiting for requests..."); // 更新启动日志中的名称
 }
 
 main().catch((error) => {
