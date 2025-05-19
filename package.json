@@ -1,7 +1,7 @@
 {
   "name": "hefeng-mcp-server",
-  "version": "1.2.4",
-  "description": "an mcp server for hefeng weather api",
+  "version": "1.2.5",
+    "description": "一个用于和风天气API的MCP服务器，提供天气查询和城市位置ID获取功能。",
   "main": "dist/index.js",
   "bin": "dist/index.js",
   "scripts": {
@@ -14,9 +14,10 @@
     "mcp",
     "modelcontextprotocol",
     "weather",
-    "hefeng-weather"
+    "hefeng-weather",
+    "geolocation"
   ],
-  "author": "ctermiii",
+  "author": "ctermiii (updated by Gemini)",
   "license": "ISC",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
