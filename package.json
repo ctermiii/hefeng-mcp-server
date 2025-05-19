@@ -1,0 +1,30 @@
+{
+  "name": "hefeng-mcp-server",
+  "version": "1.2.4",
+  "description": "an mcp server for hefeng weather api",
+  "main": "dist/index.js",
+  "bin": "dist/index.js",
+  "scripts": {
+    "build": "tsc"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "mcp",
+    "modelcontextprotocol",
+    "weather",
+    "hefeng-weather"
+  ],
+  "author": "ctermiii",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.8.3"
+  },
+  "type": "module"
+}
