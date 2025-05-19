@@ -6,10 +6,39 @@ import {
     ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import pinyinImport from "pinyin"; // Import with a different name
+
+// Define the expected interface for the pinyin library's options
+// This should align with the 'Options' interface in pinyin/index.d.ts
+interface PinyinOptions {
+    style?: number; 
+    segment?: boolean | "nodejieba";
+    heteronym?: boolean;
+    group?: boolean;
+    compact?: boolean;
+}
+
+// Define the expected interface for the pinyin function and its static properties
+// This should align with the actual exported function and its properties from pinyin/index.d.ts
+interface PinyinFunction {
+    (words: string, options?: PinyinOptions): string[][];
+    STYLE_NORMAL: number;
+    STYLE_TONE: number;
+    STYLE_TONE2: number;
+    STYLE_INITIALS: number;
+    STYLE_FIRST_LETTER: number;
+    STYLE_PASSPORT: number; // Added this based on pinyin's type definitions
+}
+
+// Force cast the imported pinyin library to our defined interface via 'unknown'.
+// This is sometimes necessary for CommonJS modules with complex export structures
+// when used in an ES module environment.
+const pinyin = pinyinImport as unknown as PinyinFunction;
+
 
 // 和风天气 API 的基础 URL 和 API 密钥
-let HEFENG_WEATHER_API_URL = ""; // 天气 API 基础 URL，默认为空
-let HEFENG_GEO_API_URL = ""; // 地理位置 API 基础 URL，默认为空
+let HEFENG_WEATHER_API_URL = ""; 
+let HEFENG_GEO_API_URL = ""; 
 let HEFENG_API_KEY = "";
 
 // 从命令行参数读取 API 密钥
@@ -29,37 +58,37 @@ if (apiUrlArg) {
     if (apiUrl) {
         console.log(`使用命令行参数中的 API URL: ${apiUrl}`);
         HEFENG_WEATHER_API_URL = apiUrl;
-        HEFENG_GEO_API_URL = apiUrl; // GEO API 也使用相同的 URL
+        HEFENG_GEO_API_URL = apiUrl; 
     }
 }
 
 if (!HEFENG_API_KEY) {
     console.warn("警告: 未提供 HEFENG_API_KEY。API 调用可能会失败。请使用 --apiKey=<你的密钥> 参数提供。");
 }
-if (!HEFENG_WEATHER_API_URL) { // 如果天气API URL为空
+if (!HEFENG_WEATHER_API_URL) { 
     console.warn("警告: 未提供 HEFENG_WEATHER_API_URL (天气API基础URL)。天气 API 调用可能会失败。请使用 --apiUrl=<API基础URL> 参数提供。");
 }
-if (!HEFENG_GEO_API_URL) { // 如果地理位置API URL为空
+if (!HEFENG_GEO_API_URL) { 
     console.warn("警告: 未配置 HEFENG_GEO_API_URL (地理位置API基础URL)。城市ID查询功能可能受影响。请使用 --apiUrl=<API基础URL> 参数提供。");
 }
 
 
 // 定义城市信息查询参数的 Zod schema
 const LocationIdArgumentsSchema = z.object({
-    city_name: z.string().describe("需要查询的城市名称，例如：北京、London"),
+    city_name: z.string().describe("需要查询的城市名称（支持文字如'北京'、拼音如'beijing'）、以英文逗号分隔的经度,纬度坐标（十进制，最多支持小数点后两位）、LocationID或Adcode（仅限中国城市）。例如 location=北京 或 location=116.41,39.92。"),
 });
 
 // 定义天气查询参数的 Zod schema
 const WeatherArgumentsSchema = z.object({
-    location: z.string().describe("城市名称（例如：北京）、逗号分隔的经纬度信息 (例如：116.40,39.90) 或 和风天气的 Location ID。"),
+    location: z.string().describe("需要查询地区的LocationID或以英文逗号分隔的经度,纬度坐标（十进制，最多支持小数点后两位）。LocationID可通过GeoAPI获取。例如 location=101010100 或 location=116.41,39.92。也支持直接输入城市拼音/英文名，若为中文名将尝试自动转换为拼音后查询LocationID。"),
     days: z.enum(['now', '24h', '72h', '168h', '3d', '7d', '10d', '15d', '30d']).default('now').describe("预报类型。now:实时天气, 24h/72h/168h:逐小时预报, 3d/7d/10d/15d/30d:逐天预报"),
 });
 
 // 创建服务器实例
 const server = new Server(
     {
-        name: "hefeng-weather-server", // 更新服务器名称
-        version: "1.2.6", // 更新服务器版本号
+        name: "hefeng-weather-server", 
+        version: "1.3.3", // 版本更新，修正 Pinyin type assertion
     },
     {
         capabilities: {
@@ -74,13 +103,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         tools: [
             {
                 name: "get-weather",
-                description: "获取中国国内或国际城市的天气预报",
+                description: "获取城市的天气预报。若输入中文城市名，会尝试转为拼音并获取LocationID后查询。",
                 inputSchema: {
                     type: "object",
                     properties: {
                         location: {
                             type: "string",
-                            description: "城市名称（例如：北京）、逗号分隔的经纬度信息 (例如：116.40,39.90) 或 和风天气的 Location ID。天气API支持直接使用城市名进行模糊搜索。",
+                            description: "需要查询地区的LocationID或以英文逗号分隔的经度,纬度坐标（例如 101010100 或 116.41,39.92）。也支持城市拼音/英文名（如 beijing）。若提供中文名（如 北京），将尝试自动转换为拼音后查找LocationID进行查询。",
                         },
                         days: {
                             type: "string",
@@ -94,13 +123,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             {
                 name: "get_location_id",
-                description: "根据城市名称获取其精确的位置ID、经纬度等详细地理信息",
+                description: "根据城市名称（支持中文、拼音、英文）、经纬度、LocationID或Adcode获取其精确的位置ID和详细地理信息。",
                 inputSchema: {
                     type: "object",
                     properties: {
-                        city_name: {
+                        city_name: { 
                             type: "string",
-                            description: "需要查询的城市名称，例如：北京、London",
+                            description: "需要查询地区的名称（支持文字如'北京'、拼音如'beijing'）、以英文逗号分隔的经度,纬度坐标（例如 116.41,39.92）、LocationID或Adcode（仅限中国城市）。",
                         },
                     },
                     required: ["city_name"],
@@ -129,14 +158,13 @@ interface HeFengLocation {
 
 interface HeFengCityLookupResponse {
     code: string; 
-    location?: HeFengLocation[];
+    location?: HeFengLocation[]; 
     refer?: {
         sources: string[];
         license: string[];
     };
 }
 
-// 定义实时天气 'now' 对象的具体结构
 interface HeFengNowObject {
     obsTime: string;
     temp: string;
@@ -152,7 +180,6 @@ interface HeFengNowObject {
     dew?: string;
 }
 
-// 定义逐小时天气 'hourly' 对象的具体结构
 interface HeFengHourlyObject {
     fxTime: string;
     temp: string;
@@ -167,7 +194,6 @@ interface HeFengHourlyObject {
     dew?: string;
 }
 
-// 定义逐日天气 'daily' 对象的具体结构
 interface HeFengDailyObject {
     fxDate: string;
     tempMax: string;
@@ -189,7 +215,7 @@ interface HeFengDailyObject {
 
 interface HeFengWeatherNowResponse {
     code: string;
-    now?: HeFengNowObject; // 使用具体类型
+    now?: HeFengNowObject; 
     refer?: { 
         sources: string[];
         license: string[];
@@ -198,7 +224,7 @@ interface HeFengWeatherNowResponse {
 
 interface HeFengWeatherDailyResponse {
     code: string;
-    daily?: HeFengDailyObject[]; // 使用具体类型数组
+    daily?: HeFengDailyObject[]; 
     refer?: { 
         sources: string[];
         license: string[];
@@ -207,22 +233,36 @@ interface HeFengWeatherDailyResponse {
 
 interface HeFengWeatherHourlyResponse {
     code: string;
-    hourly?: HeFengHourlyObject[]; // 使用具体类型数组
+    hourly?: HeFengHourlyObject[]; 
     refer?: { 
         sources: string[];
         license: string[];
     };
 }
 
+// 辅助函数：检测字符串是否包含中文字符
+function containsChinese(text: string): boolean {
+    return /[\u4e00-\u9fa5]/.test(text);
+}
+
+// 辅助函数：将中文转换为拼音 (小写，无空格)
+function convertToPinyin(chineseText: string): string {
+    const pinyinArray: string[][] = pinyin(chineseText, { 
+        style: pinyin.STYLE_NORMAL, 
+    });
+    return pinyinArray.map((arr: string[]) => arr[0]).join('').toLowerCase(); 
+}
+
+
 // 辅助函数：执行和风天气 API 请求
-async function makeHeFengRequest<T>(baseUrl: string, path: string, params: Record<string, string>): Promise<T | null> {
+async function makeHeFengRequest<T>(baseUrl: string, path: string, params: Record<string, string>): Promise<T | { code: string; error?: string; message?: string } | null> {
     if (!HEFENG_API_KEY) {
         console.error("错误: HEFENG_API_KEY 未设置。");
-        return { code: "500", error: "API Key not configured" } as any; 
+        return { code: "500", error: "API Key not configured" }; 
     }
     if (!baseUrl) { 
         console.error(`错误: API 基础 URL 未设置。`);
-        return { code: "500", error: "API Base URL not configured" } as any;
+        return { code: "500", error: "API Base URL not configured" };
     }
     
     const queryParams = new URLSearchParams({
@@ -235,56 +275,85 @@ async function makeHeFengRequest<T>(baseUrl: string, path: string, params: Recor
     const queryParamsForLog = new URLSearchParams(paramsForLog);
     console.log(`发起请求: ${baseUrl}${path}?${queryParamsForLog.toString()}&key=YOUR_API_KEY`);
 
-
     try {
         const response = await fetch(fullUrl);
         if (!response.ok) {
-            console.error(`HTTP 错误! 状态: ${response.status}, URL (key已隐藏): ${baseUrl}${path}?${queryParamsForLog.toString()}&key=YOUR_API_KEY`);
             const errorBody = await response.text();
+            console.error(`HTTP 错误! 状态: ${response.status}, URL (key已隐藏): ${baseUrl}${path}?${queryParamsForLog.toString()}&key=YOUR_API_KEY`);
             console.error(`错误详情: ${errorBody}`);
             try {
-                const hefengError = JSON.parse(errorBody) as {code?: string, message?: string};
-                if (hefengError.code) {
-                     return { code: hefengError.code, error: `HeFeng API Error: ${hefengError.message || errorBody}` } as any;
+                const hefengErrorWrapper = JSON.parse(errorBody) as { error?: { status?: number; title?: string; detail?: string; } };
+                if (hefengErrorWrapper.error && (hefengErrorWrapper.error.detail || hefengErrorWrapper.error.title)) {
+                    return { 
+                        code: String(hefengErrorWrapper.error.status || response.status), 
+                        error: `HeFeng API Error: ${hefengErrorWrapper.error.title || 'Unknown Error'}. Detail: ${hefengErrorWrapper.error.detail || 'No detail provided.'}` 
+                    };
+                }
+                const hefengCommonError = JSON.parse(errorBody) as {code?: string, message?: string};
+                if (hefengCommonError.code) {
+                     return { 
+                        code: hefengCommonError.code, 
+                        error: `HeFeng API Error (Code: ${hefengCommonError.code}): ${hefengCommonError.message || errorBody}` 
+                    };
                 }
             } catch (e) {
-                // Not a JSON error
+                console.error("解析和风API错误响应JSON失败或结构不符:", e);
             }
             throw new Error(`HTTP error! status: ${response.status}, body: ${errorBody}`);
         }
         const data = (await response.json()) as T & { code?: string };
         if (data.code && data.code !== "200") {
-            console.error(`和风 API 错误! Code: ${data.code}, URL (key已隐藏): ${baseUrl}${path}?${queryParamsForLog.toString()}&key=YOUR_API_KEY`);
+            console.error(`和风 API 业务逻辑错误! Code: ${data.code}, URL (key已隐藏): ${baseUrl}${path}?${queryParamsForLog.toString()}&key=YOUR_API_KEY`);
+            return { code: data.code, error: `HeFeng API business error. Code: ${data.code}` };
         }
-        return data;
+        return data; 
     } catch (error) {
-        console.error(`和风 API 请求 (${baseUrl}${path}) 出错:`, error);
-        if (error instanceof Error && (error as any).code) {
-             return { code: (error as any).code, message: error.message } as any;
+        console.error(`和风 API 请求 (${baseUrl}${path}) 捕获到错误:`, error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes("HeFeng API Error")) {
+            return { code: (error as any).code || String((error as any).status) || "UNKNOWN_HFE_ERROR", error: errorMessage };
         }
-        return { code: "FETCH_ERROR", message: error instanceof Error ? error.message : String(error) } as any;
+        return { code: "FETCH_ERROR", error: errorMessage };
     }
 }
 
 // 辅助函数：根据城市名称获取位置信息 (Location ID, 经纬度)
-async function fetchLocationDetailsByName(cityName: string): Promise<HeFengLocation | null> {
+async function fetchLocationDetailsByName(cityNameOrPinyin: string): Promise<HeFengLocation | null> {
     if (!HEFENG_GEO_API_URL) { 
         console.error("错误：地理位置API基础URL (HEFENG_GEO_API_URL) 未配置。");
         return null;
     }
+    console.log(`fetchLocationDetailsByName: 正在为 "${cityNameOrPinyin}" 查询地理位置信息...`);
     const response = await makeHeFengRequest<HeFengCityLookupResponse>(
         HEFENG_GEO_API_URL, 
-        "/v2/city/lookup",
-        { location: cityName }
+        "/v2/city/lookup", 
+        { location: cityNameOrPinyin } 
     );
 
-    if (response && response.code === "200" && response.location && response.location.length > 0) {
-        return response.location[0]; 
+    if (!response) { 
+        console.error(`fetchLocationDetailsByName: API请求未能发出或遇到初始配置错误 for "${cityNameOrPinyin}".`);
+        return null;
     }
-    if (response && response.code !== "200") {
-        console.error(`城市查询API错误: ${response.code} for city ${cityName}. Message: ${(response as any).message || (response as any).error}`);
+
+    if ('error' in response && response.error !== undefined) { 
+        console.error(`fetchLocationDetailsByName: API调用失败 for "${cityNameOrPinyin}". Code: ${response.code}, Error: ${response.error}`);
+        return null;
     }
-    return null;
+    
+    const data = response as HeFengCityLookupResponse;
+
+    if (data.code === "200") {
+        if (data.location && data.location.length > 0) {
+            console.log(`fetchLocationDetailsByName: 成功获取 "${cityNameOrPinyin}" 的位置信息: ID ${data.location[0].id}`);
+            return data.location[0]; 
+        } else {
+            console.error(`fetchLocationDetailsByName: API成功返回 (Code 200) 但未找到 "${cityNameOrPinyin}" 的位置信息，或数据中缺少location字段。`);
+            return null;
+        }
+    } else { 
+        console.error(`fetchLocationDetailsByName: API业务逻辑错误 for "${cityNameOrPinyin}". Code: ${data.code}. Response: ${JSON.stringify(data)}`);
+        return null;
+    }
 }
 
 
@@ -294,17 +363,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     try {
         if (name === "get_location_id") {
-            const { city_name } = LocationIdArgumentsSchema.parse(args);
+            const { city_name } = LocationIdArgumentsSchema.parse(args); 
             if (!HEFENG_GEO_API_URL) { 
                  return {
                     content: [{ type: "text", text: "错误：地理位置API基础URL未配置。请管理员使用 --apiUrl 配置。" }],
                 };
             }
-            const locationDetails = await fetchLocationDetailsByName(city_name);
+            const locationDetails = await fetchLocationDetailsByName(city_name); 
 
-            if (!locationDetails) {
+            if (!locationDetails) { 
                 return {
-                    content: [{ type: "text", text: `无法找到城市 "${city_name}" 的位置信息。请检查城市名称或API配置。` }],
+                    content: [{ type: "text", text: `无法找到城市 "${city_name}" 的位置信息。请检查输入、API配置或查看服务器日志获取更多详情。` }],
                 };
             }
             const { id, name: locName, lat, lon, adm1, adm2, country } = locationDetails;
@@ -322,8 +391,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 };
             }
             const { location: rawLocationInput, days } = WeatherArgumentsSchema.parse(args);
-            const effectiveLocation = rawLocationInput; 
-            const displayLocation = rawLocationInput; 
+            let effectiveLocation = rawLocationInput; 
+            let displayLocation = rawLocationInput; 
+            let attemptPinyin = false;
+
+            if (containsChinese(rawLocationInput)) {
+                attemptPinyin = true;
+                console.log(`检测到中文城市名: "${rawLocationInput}", 尝试转换为拼音并获取LocationID...`);
+                const pinyinName = convertToPinyin(rawLocationInput);
+                displayLocation = `${rawLocationInput} (${pinyinName})`; 
+                console.log(`转换为拼音: "${pinyinName}"`);
+                
+                const locationDetailsFromPinyin = await fetchLocationDetailsByName(pinyinName);
+                if (locationDetailsFromPinyin && locationDetailsFromPinyin.id) {
+                    effectiveLocation = locationDetailsFromPinyin.id; 
+                    console.log(`通过拼音 "${pinyinName}" 成功获取LocationID: ${effectiveLocation} for original "${rawLocationInput}"`);
+                } else {
+                    console.warn(`未能通过拼音 "${pinyinName}" (来自 "${rawLocationInput}") 获取LocationID。将尝试直接使用 "${pinyinName}" 查询天气。`);
+                    effectiveLocation = pinyinName; 
+                }
+            } else {
+                console.log(`输入 "${rawLocationInput}" 非中文，直接用于天气查询或作为ID/坐标。`);
+            }
 
             let weatherPath = "";
             if (days === 'now') {
@@ -334,24 +423,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 weatherPath = `/v7/weather/${days}`;
             }
             
+            console.log(`最终用于天气API的 location 参数: "${effectiveLocation}" (显示名称: "${displayLocation}")`);
             const weatherData = await makeHeFengRequest<HeFengWeatherNowResponse | HeFengWeatherHourlyResponse | HeFengWeatherDailyResponse>(
                 HEFENG_WEATHER_API_URL, 
                 weatherPath,
-                { location: effectiveLocation }
+                { location: effectiveLocation } 
             );
-
-            if (!weatherData || weatherData.code !== "200") {
+            
+            if (!weatherData || ('error' in weatherData) || (weatherData.code && weatherData.code !== "200")) {
                  const apiErrorCode = weatherData?.code || "N/A";
-                 const errorMessage = (weatherData as any)?.message || (weatherData as any)?.error || "未能获取数据，请检查地点名称或API配置。";
+                 const rawErrorMessage = (weatherData as any)?.error || (weatherData as any)?.message || "未能获取数据，请检查地点名称或API配置。";
+                 let note = "";
+                 if (attemptPinyin && apiErrorCode !== "200") { 
+                     note = ` (已尝试将 "${rawLocationInput}" 转为拼音 "${convertToPinyin(rawLocationInput)}" 进行查询)`
+                 }
                 return {
-                    content: [{ type: "text", text: `无法获取 ${displayLocation} 的天气数据 (API Code: ${apiErrorCode}). ${errorMessage}` }],
+                    content: [{ type: "text", text: `无法获取 ${displayLocation} 的天气数据 (API Code/Status: ${apiErrorCode}). ${rawErrorMessage}${note}` }],
                 };
             }
 
             if (days === 'now') {
-                // Type guard for 'now' data
                 if ('now' in weatherData && weatherData.now) {
-                    const nowDetails: HeFengNowObject = weatherData.now; // nowDetails is now guaranteed to be defined and correctly typed
+                    const nowDetails: HeFengNowObject = weatherData.now;
                     const weatherText = `地点: ${displayLocation}\n` +
                         `观测时间: ${nowDetails.obsTime}\n` +
                         `天气: ${nowDetails.text}\n` +
@@ -368,7 +461,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     return { content: [{ type: "text", text: `获取 ${displayLocation} 的实时天气数据时，数据结构不完整或无效。 (Code: ${weatherData.code})` }] };
                 }
             } else if (['24h', '72h', '168h'].includes(days)) {
-                // Type guard for 'hourly' data
                 if ('hourly' in weatherData && weatherData.hourly && weatherData.hourly.length > 0) {
                     const hourlyDetails: HeFengHourlyObject[] = weatherData.hourly;
                     const hoursText = hourlyDetails.map(hour => {
@@ -387,8 +479,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 } else {
                      return { content: [{ type: "text", text: `无法获取 ${displayLocation} 的逐小时预报，数据不完整或该地区无此项数据。 (Code: ${weatherData.code})` }] };
                 }
-            } else { // Daily forecast: 3d, 7d, etc.
-                // Type guard for 'daily' data
+            } else { 
                 if ('daily' in weatherData && weatherData.daily && weatherData.daily.length > 0) {
                     const dailyDetails: HeFengDailyObject[] = weatherData.daily;
                     const forecastText = dailyDetails.map(day => {
@@ -434,7 +525,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error("hefeng-weather-server MCP Server running on stdio. Waiting for requests..."); // 更新启动日志中的名称
+    console.error("hefeng-weather-server MCP Server running on stdio. Waiting for requests...");
 }
 
 main().catch((error) => {
