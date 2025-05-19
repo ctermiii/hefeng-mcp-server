@@ -27,9 +27,9 @@ Add this to your claude_desktop_config.json
 ```json
 {
   "mcpServers": {
-    "hefeng-weather": {
+    "hefeng-weather-server": {
       "command": "npx",
-      "args": ["hefeng-mcp-weather@latest", "--apiKey=${API_KEY}"]
+      "args": ["hefeng-mcp-server@latest", "--apiKey=${API_KEY}" "--apiUrl=${API_HOST}" ]
     }
   }
 }
