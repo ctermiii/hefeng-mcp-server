@@ -56,16 +56,23 @@ const LocationIdArgumentsSchema = z.object({
 // 定义天气查询参数的 Zod schema
 // Define Zod schema for weather query parameters
 const WeatherArgumentsSchema = z.object({
-    location: z.string().describe("需要查询地区的LocationID或以英文逗号分隔的经度,纬度坐标（十进制，最多支持小数点后两位）。例如: 101010100 或 116.41,39.92。"), // Updated description
+    location: z.string().describe("需要查询地区的LocationID或以英文逗号分隔的经度,纬度坐标（十进制，最多支持小数点后两位）。例如: 101010100 或 116.41,39.92。"),
     days: z.enum(['now', '24h', '72h', '168h', '3d', '7d', '10d', '15d', '30d']).default('now').describe("预报类型。now:实时天气, 24h/72h/168h:逐小时预报, 3d/7d/10d/15d/30d:逐天预报"),
 });
+
+// 定义获取日期时间工具的参数 Zod schema
+// Define Zod schema for get_datetime tool arguments
+const DateTimeArgumentsSchema = z.object({
+    timezone: z.string().optional().describe("可选的时区，例如 'America/New_York', 'Europe/London'。如果未提供，默认为 'Asia/Shanghai'。"),
+});
+
 
 // 创建服务器实例
 // Create server instance
 const server = new Server(
     {
         name: "hefeng-mcp-server",
-        version: "1.6.2", // Server version remains 1.6.0
+        version: "1.7.0", // Server version
     },
     {
         capabilities: {
@@ -81,13 +88,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         tools: [
             {
                 name: "get_weather",
-                description: "获取指定地点的天气预报。请提供LocationID或经纬度坐标。", // Updated tool description
+                description: "获取指定地点的天气预报。请提供LocationID或经纬度坐标。",
                 inputSchema: {
                     type: "object",
                     properties: {
                         location: {
                             type: "string",
-                            description: "需要查询地区的LocationID或以英文逗号分隔的经度,纬度坐标（十进制，最多支持小数点后两位）。例如: 101010100 或 116.41,39.92。", // Updated property description
+                            description: "需要查询地区的LocationID或以英文逗号分隔的经度,纬度坐标（十进制，最多支持小数点后两位）。例如: 101010100 或 116.41,39.92。",
                         },
                         days: {
                             type: "string",
@@ -112,12 +119,25 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     },
                     required: ["city_name"],
                 },
+            },
+            {
+                name: "get_datetime",
+                description: "获取当前的日期和时间。可以提供一个可选的时区参数，默认为 'Asia/Shanghai'。",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        timezone: {
+                            type: "string",
+                            description: "可选的时区，例如 'America/New_York', 'Europe/London'。如果未提供，默认为 'Asia/Shanghai'。",
+                        },
+                    },
+                },
             }
         ],
     };
 });
 
-// 和风天气 API 响应体接口定义
+// 和风天气 API 响应体接口定义 (保持不变)
 // HeFeng Weather API response body interface definitions (remain the same)
 interface HeFengLocation {
     name: string;
@@ -219,8 +239,8 @@ interface HeFengWeatherHourlyResponse {
     };
 }
 
-// 辅助函数：执行和风天气 API 请求
-// Helper function: Execute HeFeng Weather API request
+// 辅助函数：执行和风天气 API 请求 (保持不变)
+// Helper function: Execute HeFeng Weather API request (remains the same)
 async function makeHeFengRequest<T>(baseUrl: string, path: string, params: Record<string, string>): Promise<T | { code: string; error?: string; message?: string } | null> {
     if (!HEFENG_API_KEY) {
         console.error("错误: HEFENG_API_KEY 未设置。");
@@ -285,8 +305,8 @@ async function makeHeFengRequest<T>(baseUrl: string, path: string, params: Recor
     }
 }
 
-// 辅助函数：根据城市名称/ID/坐标获取位置信息
-// Helper function: Get location information by city name/ID/coordinates.
+// 辅助函数：根据城市名称/ID/坐标获取位置信息 (保持不变)
+// Helper function: Get location information by city name/ID/coordinates (remains the same)
 async function fetchLocationDetails(inputLocation: string): Promise<HeFengLocation | null> {
     if (!HEFENG_GEO_API_URL) {
         console.error("错误：地理位置API基础URL (HEFENG_GEO_API_URL) 未配置。");
@@ -296,8 +316,8 @@ async function fetchLocationDetails(inputLocation: string): Promise<HeFengLocati
     console.log(`fetchLocationDetails: 正在为 "${inputLocation}" 查询地理位置信息...`);
     const response = await makeHeFengRequest<HeFengCityLookupResponse>(
         HEFENG_GEO_API_URL,
-        "/geo/v2/city/lookup",
-        { location: inputLocation } // Use input directly
+        "/geo/v2/city/lookup", 
+        { location: inputLocation } 
     );
 
     if (!response) {
@@ -454,6 +474,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     return { content: [{ type: "text", text: `无法获取 ${displayLocation} 的 ${days} 天气预报，数据不完整或该地区无此项数据。 (Code: ${weatherData.code})` }] };
                 }
             }
+        } else if (name === "get_datetime") {
+            const { timezone } = DateTimeArgumentsSchema.parse(args);
+            const currentDateTime = new Date();
+            let dateTimeString: string;
+            const targetTimezone = timezone || 'Asia/Shanghai'; // Default to Asia/Shanghai
+
+            try {
+                // Use toLocaleString with options to get time in the target timezone
+                // 'zh-CN' is used for locale, but timeZone option dictates the actual time.
+                // You can adjust 'zh-CN' to other locales like 'en-US' if needed for formatting,
+                // but the time itself will be correct for the targetTimezone.
+                dateTimeString = currentDateTime.toLocaleString('zh-CN', { timeZone: targetTimezone });
+            } catch (error) {
+                // Handle cases where the timezone string might be invalid, though toLocaleString is often robust.
+                console.warn(`无效的时区 "${targetTimezone}" 或格式化错误:`, error);
+                // Fallback to ISO string (UTC) or a known good default like Shanghai if specific timezone fails
+                const fallbackTimezone = 'Asia/Shanghai';
+                dateTimeString = currentDateTime.toLocaleString('zh-CN', { timeZone: fallbackTimezone });
+                dateTimeString += ` (无法识别提供的时区 "${timezone}", 已回退到 ${fallbackTimezone})`;
+            }
+            
+            return {
+                content: [{ type: "text", text: `当前日期时间 (${targetTimezone}): ${dateTimeString}` }],
+            };
         }
          else {
             throw new Error(`Unknown tool: ${name}`);
