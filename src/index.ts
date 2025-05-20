@@ -65,7 +65,7 @@ const WeatherArgumentsSchema = z.object({
 const server = new Server(
     {
         name: "hefeng-mcp-server",
-        version: "1.6.0", // Server version remains 1.6.0
+        version: "1.6.2", // Server version remains 1.6.0
     },
     {
         capabilities: {
@@ -296,7 +296,7 @@ async function fetchLocationDetails(inputLocation: string): Promise<HeFengLocati
     console.log(`fetchLocationDetails: 正在为 "${inputLocation}" 查询地理位置信息...`);
     const response = await makeHeFengRequest<HeFengCityLookupResponse>(
         HEFENG_GEO_API_URL,
-        "/v2/city/lookup",
+        "/geo/v2/city/lookup",
         { location: inputLocation } // Use input directly
     );
 

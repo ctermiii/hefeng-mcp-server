@@ -1,6 +1,6 @@
 {
   "name": "hefeng-mcp-server",
-  "version": "1.6.0",
+  "version": "1.6.2",
   "description": "一个用于和风天气API的MCP服务器，提供天气查询和城市位置ID获取功能。",
   "main": "dist/index.js",
   "bin": "dist/index.js",
